@@ -43,13 +43,22 @@ from rospy_message_converter import message_converter
 
 from franka_core_msgs.msg import JointCommand
 from franka_core_msgs.msg import RobotState, EndPointState
-# Add some additional franka_core_msgs
-from franka_core_msgs.msg import CartImpedanceStiffness, JointImpedanceStiffness, TorqueCmd, JICmd
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
+# addition for cartesian impedance interface
+from geometry_msgs.msg import PoseStamped, Wrench
+# Add some additional franka_core_msgs
+from franka_core_msgs.msg import CartImpedanceStiffness, JointImpedanceStiffness, TorqueCmd, JICmd
 
 import franka_dataflow
 from .robot_params import RobotParams
+
+# additions
+# For gripper interface...
+# import franka_interface
+
+# For impedance control 
+import franka_control
 
 from franka_moveit import PandaMoveGroupInterface
 from franka_moveit.utils import create_pose_msg
@@ -158,6 +167,7 @@ class ArmInterface(object):
         self._neutral_pose_joints = self._params.get_neutral_pose()
 
         self._frames_interface = FrankaFramesInterface()
+
         try:
             self._collision_behaviour_interface = CollisionBehaviourInterface()
         except rospy.ROSException:
@@ -208,6 +218,13 @@ class ArmInterface(object):
             queue_size=1,
             tcp_nodelay=True)
 
+        # Cartesian Impedance Controller Publishers
+        self._cartesian_impedance_pose_publisher = rospy.Publisher("equilibrium_pose", PoseStamped, queue_size=10)
+        self._cartesian_stiffness_publisher = rospy.Publisher("impedance_stiffness", CartImpedanceStiffness, queue_size=10)
+
+        # Force Control Publisher
+        self._cartesian_force_controller_publisher = rospy.Publisher("wrench_target", Wrench, queue_size=10)
+
         rospy.on_shutdown(self._clean_shutdown)
 
         err_msg = ("%s arm init failed to get current joint_states "
@@ -236,12 +253,31 @@ class ArmInterface(object):
 
         self.set_joint_position_speed(self._speed_ratio)
 
+    # Additions
+    def convertToDict(self, q):
+        q_dict = dict()
+        for i in xrange(len(q)):
+            q_dict['panda_joint{}'.format(i+1)] = q[i]
+        return q_dict
+
+    def convertToList(self, q_dict):
+        q = []
+        sorted_keys = sorted(q_dict.keys())
+        for i in sorted_keys:
+            q.append(q_dict[i])
+        return q
+    # ############
+
     def _clean_shutdown(self):
         self._joint_state_sub.unregister()
         self._cartesian_state_sub.unregister()
         self._pub_joint_cmd_timeout.unregister()
         self._robot_state_subscriber.unregister()
         self._joint_command_publisher.unregister()
+        # additions
+        self._cartesian_impedance_pose_publisher.unregister()
+        self._cartesian_stiffness_publisher.unregister()
+        self._cartesian_force_controller_publisher.unregister()
 
     def get_movegroup_interface(self):
         """
@@ -686,6 +722,19 @@ class ArmInterface(object):
         """
         return any(self._joint_collision) or any(self._cartesian_collision)
 
+    # addition... needed???
+    # ANS: NO switching controller method has moved to controller_manager_interface: set_motion_controller  
+    # def switchToController(self, controller_name):
+        # active_controllers = self._ctrl_manager.list_active_controllers(only_motion_controllers = True)
+        # for ctrlr in active_controllers:
+            # self._ctrl_manager.stop_controller(ctrlr.name)
+            # rospy.loginfo("ArmInterface: Stopping %s for trajectory controlling"%ctrlr.name)
+            # rospy.sleep(0.5)
+# 
+        # if not self._ctrl_manager.is_loaded(controller_name):
+            # self._ctrl_manager.load_controller(controller_name)
+        # self._ctrl_manager.start_controller(controller_name)
+
     def move_to_neutral(self, timeout=15.0, speed=0.15):
         """
         Command the Limb joints to a predefined set of "neutral" joint angles.
@@ -859,6 +908,278 @@ class ArmInterface(object):
         self._ctrl_manager.set_motion_controller(curr_controller)
         rospy.loginfo("{}: Trajectory controlling complete".format(
             self.__class__.__name__))
+
+    # Additions
+    def execute_position_path(self, position_path, timeout=15.0,
+                                threshold=0.00085, test=None):
+        """
+        (Blocking) Commands the limb to the provided positions.
+        Waits until the reported joint state matches that specified.
+        This function uses a low-pass filter to smooth the movement.
+
+        @type positions: dict({str:float})
+        @param positions: joint_name:angle command
+        @type timeout: float
+        @param timeout: seconds to wait for move to finish [15]
+        @type threshold: float
+        @param threshold: position threshold in radians across each joint when
+        move is considered successful [0.008726646]
+        @param test: optional function returning True if motion must be aborted
+        """
+
+        current_q = self.joint_angles()
+        diff_from_start = sum([abs(a-current_q[j]) for j, a in position_path[0].items()])
+        if diff_from_start > 0.1:
+            raise IOError("Robot not at start of trajectory")
+
+        # TODO LEON: use the controller_manager_interface to switch
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller: 
+            self.switchToController(self._ctrl_manager.joint_trajectory_controller)
+        
+        min_traj_dur = 0.5
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
+        traj_client.clear()
+
+        time_so_far = 0
+        # Start at the second waypoint because robot is already at first waypoint
+        for i in xrange(1, len(position_path)): 
+            q = position_path[i]
+            dur = []
+            for j in range(len(self._joint_names)):
+                dur.append(max(abs(q[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
+
+            time_so_far += max(dur)/self._speed_ratio
+            traj_client.add_point(positions = [q[n] for n in self._joint_names], time = time_so_far, velocities=[0.005 for n in self._joint_names])
+
+        diffs = [self.genf(j, a) for j, a in (position_path[-1]).items() if j in self._joint_angle] # Measures diff to last waypoint
+
+        fail_msg = "ArmInterface: {0} limb failed to reach commanded joint positions.".format(
+                                                      self.name.capitalize())
+        def test_collision():
+            if self.has_collided():
+                rospy.logerr(' '.join(["Collision detected.", fail_msg]))
+                return True
+            return False
+
+        traj_client.start() # send the trajectory action request
+
+        franka_dataflow.wait_for(
+            test=lambda: test_collision() or \
+                         (callable(test) and test() == True) or \
+                         (all(diff() < threshold for diff in diffs)),
+            #timeout=timeout,
+            timeout=max(time_so_far, timeout), #XXX
+            timeout_msg=fail_msg,
+            rate=100,
+            raise_on_error=False
+            )
+
+        rospy.sleep(0.5)
+        rospy.loginfo("ArmInterface: Trajectory controlling complete")
+
+    def move_to_touch(self, positions, timeout=10.0, threshold=0.00085):
+        """
+        (Blocking) Commands the limb to the provided positions.
+
+        Waits until the reported joint state matches that specified.
+
+        This function uses a low-pass filter to smooth the movement.
+
+        @type positions: dict({str:float})
+        @param positions: joint_name:angle command
+        @type timeout: float
+        @param timeout: seconds to wait for move to finish [15]
+        @type threshold: float
+        @param threshold: position threshold in radians across each joint when
+        move is considered successful [0.008726646]
+        @param test: optional function returning True if motion must be aborted
+        """
+        # TODO LEON: use the controller_manager_interface to switch
+
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller: 
+            self.switchToController(self._ctrl_manager.joint_trajectory_controller)
+        
+        min_traj_dur = 0.5
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
+        traj_client.clear()
+
+        speed_ratio = 0.05 # Move slower when approaching contact
+        dur = []
+        for j in range(len(self._joint_names)):
+            dur.append(max(abs(positions[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
+        traj_client.add_point(positions = [positions[n] for n in self._joint_names], time = max(dur)/speed_ratio, velocities=[0.002 for n in self._joint_names])
+
+        diffs = [self.genf(j, a) for j, a in positions.items() if j in self._joint_angle]
+        fail_msg = "ArmInterface: {0} limb failed to reach commanded joint positions.".format(
+                                                      self.name.capitalize()) 
+ 
+        traj_client.start() # send the trajectory action request
+
+        franka_dataflow.wait_for(
+            test=lambda: self.has_collided() or \
+                         (all(diff() < threshold for diff in diffs)),
+            timeout=timeout,
+            timeout_msg="Move to touch complete.",
+            rate=100,
+            raise_on_error=False
+            )
+
+        rospy.sleep(0.5)
+
+        if not self.has_collided():
+            rospy.logerr('Move To Touch did not end in making contact') 
+        else:
+
+            rospy.loginfo('Collision detected!')
+
+        # The collision, though desirable, triggers a cartesian reflex error. We need to reset that error
+        if self._robot_mode == 4:
+            self.resetErrors()
+
+        rospy.loginfo("ArmInterface: Trajectory controlling complete")
+
+    def resetErrors(self):
+        rospy.sleep(0.5)
+        pub = rospy.Publisher('/franka_ros_interface/franka_control/error_recovery/goal', franka_control.msg.ErrorRecoveryActionGoal, queue_size=10)
+        rospy.sleep(0.5)
+        pub.publish(franka_control.msg.ErrorRecoveryActionGoal())
+        rospy.loginfo("Collision Reflex was reset")
+
+    def move_from_touch(self, positions, timeout=10.0, threshold=0.00085):
+        """
+        (Blocking) Commands the limb to the provided positions.
+
+        Waits until the reported joint state matches that specified.
+
+        This function uses a low-pass filter to smooth the movement.
+
+        @type positions: dict({str:float})
+        @param positions: joint_name:angle command
+        @type timeout: float
+        @param timeout: seconds to wait for move to finish [15]
+        @type threshold: float
+        @param threshold: position threshold in radians across each joint when
+        move is considered successful [0.008726646]
+        @param test: optional function returning True if motion must be aborted
+        """
+        # TODO LEON: use the controller_manager_interface to switch
+
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller: 
+            self.switchToController(self._ctrl_manager.joint_trajectory_controller)
+        
+        min_traj_dur = 0.5
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
+        traj_client.clear()
+
+        dur = []
+        for j in range(len(self._joint_names)):
+            dur.append(max(abs(positions[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
+        traj_client.add_point(positions = [positions[n] for n in self._joint_names], time = max(dur)/self._speed_ratio)
+
+        diffs = [self.genf(j, a) for j, a in positions.items() if j in self._joint_angle]
+        fail_msg = "ArmInterface: {0} limb failed to reach commanded joint positions.".format(
+                                                      self.name.capitalize()) 
+ 
+        traj_client.start() # send the trajectory action request
+
+        franka_dataflow.wait_for(
+            test=lambda: (all(diff() < threshold for diff in diffs)),
+            timeout=timeout,
+            timeout_msg="Unable to complete plan!",
+            rate=100,
+            raise_on_error=False
+            )
+
+        rospy.sleep(0.5)
+        rospy.loginfo("ArmInterface: Trajectory controlling complete")
+
+    def set_cartesian_pose(self, pose):
+        # TODO LEON: use the controller_manager_interface to switch
+
+        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_pose_controller:
+            self.switchToController(self._ctrl_manager.cartesian_pose_controller)
+
+        marker_pose = PoseStamped()
+        marker_pose.pose.position.x = pose['position'][0]
+        marker_pose.pose.position.y = pose['position'][1]
+        marker_pose.pose.position.z = pose['position'][2]
+        marker_pose.pose.orientation.x = pose['orientation'].x
+        marker_pose.pose.orientation.y = pose['orientation'].y
+        marker_pose.pose.orientation.z = pose['orientation'].z
+        marker_pose.pose.orientation.w = pose['orientation'].w
+        self._cartesian_impedance_pose_publisher.publish(marker_pose)
+
+        # Do not return until motion complete
+        rospy.sleep(0.1)
+        while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
+            rospy.sleep(0.1)
+
+    def set_cartesian_velocity(self, w):
+        #TODO Need a better interface. Use action lib?
+
+        #Need q converted to list
+        # TODO LEON: use the controller_manager_interface to switch
+
+        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_velocity_controller: 
+            self.switchToController(self._ctrl_manager.cartesian_velocity_controller)
+
+        return NotImplementedError
+
+    def set_cartesian_impedance_pose(self, pose, stiffness=None):
+        # TODO LEON: use the controller_manager_interface to switch
+
+        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
+            self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
+
+        if stiffness is not None:
+            stiffness_gains = CartImpedanceStiffness()
+            stiffness_gains.x = stiffness[0]
+            stiffness_gains.y = stiffness[1]
+            stiffness_gains.z = stiffness[2]
+            stiffness_gains.xrot = stiffness[3]
+            stiffness_gains.yrot = stiffness[4]
+            stiffness_gains.zrot = stiffness[5]
+            self._cartesian_stiffness_publisher.publish(stiffness_gains)
+
+        marker_pose = PoseStamped()
+        marker_pose.pose.position.x = pose['position'][0]
+        marker_pose.pose.position.y = pose['position'][1]
+        marker_pose.pose.position.z = pose['position'][2]
+        marker_pose.pose.orientation.x = pose['orientation'].x
+        marker_pose.pose.orientation.y = pose['orientation'].y
+        marker_pose.pose.orientation.z = pose['orientation'].z
+        marker_pose.pose.orientation.w = pose['orientation'].w
+        self._cartesian_impedance_pose_publisher.publish(marker_pose)
+
+        # Do not return until motion complete
+        rospy.sleep(0.1)
+        while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
+            rospy.sleep(0.1)
+
+    def execute_cartesian_impedance_path(self, poses, stiffness=None):
+        # TODO LEON: use the controller_manager_interface to switch
+        
+        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
+            self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
+
+        for i in xrange(len(poses)):
+            self.set_cart_impedance_pose(poses[i], stiffness)
+            if i == 0: self.resetErrors()
+
+    def set_cartesian_force(self, target_wrench):
+        # TODO LEON: use the controller_manager_interface to switch
+        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_force_controller: 
+            self.switchToController(self._ctrl_manager.cartesian_force_controller)
+
+        wrench = Wrench()
+        wrench.force.x = target_wrench[0]
+        wrench.force.y = target_wrench[1]
+        wrench.force.z = target_wrench[2]
+        wrench.torque.x = target_wrench[3]
+        wrench.torque.y = target_wrench[4] 
+        wrench.torque.z = target_wrench[5]
+        self._cartesian_force_controller_publisher.publish(wrench)
+    # End of additions
 
     def pause_controllers_and_do(self, func, *args, **kwargs):
         """

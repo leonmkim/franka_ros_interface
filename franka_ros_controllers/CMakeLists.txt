@@ -25,6 +25,8 @@ find_package(Franka 0.5.0 REQUIRED)
 
 generate_dynamic_reconfigure_options(
   cfg/joint_controller_params.cfg
+  cfg/compliance_param.cfg # additions
+  cfg/desired_mass_param.cfg
 )
 
 catkin_package(

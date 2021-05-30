@@ -599,6 +599,16 @@ class FrankaControllerManagerInterface(object):
             return self.joint_position_controller
         return self._controller_names_from_rosparam['joint_trajectory_controller']
 
+    # additions
+    @property
+    def force_controller(self):
+        return self._ns[1:] + "/force_controller"
+
+    @property
+    def cartesian_impedance_controller(self):
+        return self._ns[1:] + "/cartesian_impedance_controller"
+    # end of additions   
+    
     @property
     def current_controller(self):
         """
