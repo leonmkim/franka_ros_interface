@@ -1,5 +1,8 @@
 // Copyright (c) 2017 Franka Emika GmbH
 // Use of this source code is governed by the Apache-2.0 license, see LICENSE
+
+// Taken from rachelhollday's fork of justagist/franka_ros_interface
+// https://github.com/rachelholladay/franka_ros_interface/blob/feature/newControllers/franka_ros_controllers/src/cartesian_impedance_controller.cpp
 #include <franka_ros_controllers/cartesian_impedance_controller.h>
 
 #include <cmath>
@@ -166,6 +169,11 @@ void CartesianImpedanceController::update(const ros::Time& /*time*/,
   }
   // "difference" quaternion
   Eigen::Quaterniond error_quaternion(orientation * orientation_d_.inverse());
+  // LEON: this doesnt seem right? should be difference other way around. 
+  // (also corroborated by OG franka_ros code...)
+  // For now don't correct, try first..
+  // Eigen::Quaterniond error_quaternion(orientation_d_ * orientation.inverse());
+
   // convert to axis angle
   Eigen::AngleAxisd error_quaternion_angle_axis(error_quaternion);
   // compute "orientation error"

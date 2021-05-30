@@ -43,6 +43,8 @@ from rospy_message_converter import message_converter
 
 from franka_core_msgs.msg import JointCommand
 from franka_core_msgs.msg import RobotState, EndPointState
+# Add some additional franka_core_msgs
+from franka_core_msgs.msg import CartImpedanceStiffness, JointImpedanceStiffness, TorqueCmd, JICmd
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
 
