@@ -48,7 +48,7 @@ from std_msgs.msg import Float64
 # addition for cartesian impedance interface
 from geometry_msgs.msg import PoseStamped, Wrench
 # Add some additional franka_core_msgs
-from franka_core_msgs.msg import CartImpedanceStiffness, JointImpedanceStiffness, TorqueCmd, JICmd
+from franka_core_msgs.msg import CartImpedanceStiffness
 
 import franka_dataflow
 from .robot_params import RobotParams
