@@ -57,8 +57,10 @@ from .robot_params import RobotParams
 # For gripper interface...
 # import franka_interface
 
-# For impedance control 
-import franka_control
+# For reseting error for the move_to_touch function
+# import franka_control
+from franka_msgs.msg import ErrorRecoveryActionGoal
+
 
 from franka_moveit import PandaMoveGroupInterface
 from franka_moveit.utils import create_pose_msg
@@ -1040,9 +1042,9 @@ class ArmInterface(object):
 
     def resetErrors(self):
         rospy.sleep(0.5)
-        pub = rospy.Publisher('/franka_ros_interface/franka_control/error_recovery/goal', franka_control.msg.ErrorRecoveryActionGoal, queue_size=10)
+        pub = rospy.Publisher('/franka_ros_interface/franka_control/error_recovery/goal', ErrorRecoveryActionGoal, queue_size=10)
         rospy.sleep(0.5)
-        pub.publish(franka_control.msg.ErrorRecoveryActionGoal())
+        pub.publish(ErrorRecoveryActionGoal())
         rospy.loginfo("Collision Reflex was reset")
 
     def move_from_touch(self, positions, timeout=10.0, threshold=0.00085):
@@ -1093,6 +1095,7 @@ class ArmInterface(object):
         rospy.sleep(0.5)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
+    # addition
     def set_cartesian_pose(self, pose):
         # TODO LEON: use the controller_manager_interface to switch
 
@@ -1114,6 +1117,7 @@ class ArmInterface(object):
         while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
             rospy.sleep(0.1)
 
+    # addition
     def set_cartesian_velocity(self, w):
         #TODO Need a better interface. Use action lib?
 
@@ -1125,6 +1129,7 @@ class ArmInterface(object):
 
         return NotImplementedError
 
+    # addition
     def set_cartesian_impedance_pose(self, pose, stiffness=None):
         # TODO LEON: use the controller_manager_interface to switch
 
@@ -1156,6 +1161,7 @@ class ArmInterface(object):
         while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
             rospy.sleep(0.1)
 
+    # addition
     def execute_cartesian_impedance_path(self, poses, stiffness=None):
         # TODO LEON: use the controller_manager_interface to switch
         
@@ -1166,6 +1172,7 @@ class ArmInterface(object):
             self.set_cart_impedance_pose(poses[i], stiffness)
             if i == 0: self.resetErrors()
 
+    # addition
     def set_cartesian_force(self, target_wrench):
         # TODO LEON: use the controller_manager_interface to switch
         if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_force_controller: 

@@ -1,7 +1,8 @@
 <?xml version="1.0" ?>
 <launch>
   <rosparam command="load" file="$(find franka_ros_controllers)/config/ros_controllers.yaml" ns="/franka_ros_interface"/>
-  <arg name="load_gripper" default="true" />
+  <arg name="load_gripper" default="false" />
+  <arg name="load_peg" default="true" />
   <arg name="rate" default="1000" />
   <arg name="start_controllers" default="true" />
   <arg name="start_moveit" default="true" />
@@ -10,9 +11,12 @@
 
   <!-- Panda Control Interface -->
   <!-- TODO: LEON add peg model with logic -->
-  <!-- <param name="robot_description" command="$(find xacro)/xacro __inorder '$(find franka_panda_description)/robots/panda_arm_hand_peg.urdf.xacro'" if="$(arg load_peg)" /> -->
-  <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find franka_panda_description)/robots/panda_arm_hand.urdf.xacro'" if="$(arg load_gripper)" />
-  <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find franka_panda_description)/robots/panda_arm.urdf.xacro'" unless="$(arg load_gripper)" />
+  <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find franka_panda_description)/robots/panda_arm_hand_peg.urdf.xacro'" if="$(arg load_peg)" />
+  <group if="$(eval arg('load_peg') == false)">
+    <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find franka_panda_description)/robots/panda_arm_hand.urdf.xacro'" if="$(arg load_gripper)" />
+    <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find franka_panda_description)/robots/panda_arm.urdf.xacro'" unless="$(arg load_gripper)" />
+  </group>
+  
 
   <include file="$(find franka_gripper)/launch/franka_gripper.launch" if="$(arg load_gripper)">
     <arg name="robot_ip" value="$(env FRANKA_ROBOT_IP)" />
@@ -57,16 +61,16 @@
                                            franka_ros_interface/effort_joint_position_controller
                                            franka_ros_interface/effort_joint_torque_controller
                                            franka_ros_interface/velocity_joint_velocity_controller
-                                           franka_ros_interface/position_joint_position_controller
-                                           franka_ros_interface/cartesian_force_controller
-                                           franka_ros_interface/cartesian_impedance_controller"/>
+                                           franka_ros_interface/position_joint_position_controller"/>
+                                           <!-- franka_ros_interface/cartesian_force_controller -->
+                                           <!-- franka_ros_interface/cartesian_impedance_controller -->
   </group>
 
   <node pkg="tf" type="static_transform_publisher" name="base_to_link0" args="0 0 0 0 0 0 1 base panda_link0 100" />                                                                      
   <node pkg="tf" type="static_transform_publisher" name="world_to_base" args="0 0 0 0 0 0 1 world base 100" />                                                                      
 
   <!-- addition for impedance rviz interface  -->
-  <node pkg="rviz" type="rviz" output="screen" name="rviz" args="-d $(find franka_interface)/launch/rviz/franka_description_with_marker.rviz"/>
+  <!-- <node pkg="rviz" type="rviz" output="screen" name="rviz" args="-d $(find franka_interface)/launch/rviz/franka_description_with_marker.rviz"/> -->
 
   <group if="$(eval arg('start_moveit') == true)">
     <include file="$(find panda_moveit_config)/launch/move_group.launch">
