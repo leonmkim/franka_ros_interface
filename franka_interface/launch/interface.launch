@@ -10,7 +10,6 @@
   <arg name="load_demo_planning_scene" default="true"/>
 
   <!-- Panda Control Interface -->
-  <!-- TODO: LEON add peg model with logic -->
   <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find franka_panda_description)/robots/panda_arm_hand_peg.urdf.xacro'" if="$(arg load_peg)" />
   <group if="$(eval arg('load_peg') == false)">
     <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find franka_panda_description)/robots/panda_arm_hand.urdf.xacro'" if="$(arg load_gripper)" />
