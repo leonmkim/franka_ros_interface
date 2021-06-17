@@ -40,6 +40,9 @@
 
 #include <franka_interface/motion_controller_interface.h>
 
+#include <franka_core_msgs/TriggerError.h>
+
+
 using franka_hw::ServiceContainer;
 
 int main(int argc, char** argv) {
@@ -58,6 +61,7 @@ int main(int argc, char** argv) {
   franka::Robot& robot = franka_control.robot();
 
   std::atomic_bool has_error(false);
+  // std::atomic_bool kill_control(false);
 
   ServiceContainer services;
     services
@@ -89,7 +93,10 @@ int main(int argc, char** argv) {
           })
       .advertiseService<franka_msgs::SetLoad>(
           base_node_handle, "/franka_ros_interface/franka_control/set_load",
-          [&robot](auto&& req, auto&& res) { return franka_hw::setLoad(robot, req, res); });
+          [&robot](auto&& req, auto&& res) { return franka_hw::setLoad(robot, req, res); })
+      .advertiseService<franka_core_msgs::TriggerError>( // trigger error service for killing control
+          base_node_handle, "/franka_ros_interface/franka_control/trigger_error",
+          [&has_error](auto&& req, auto&& res) { ROS_INFO("has_error switched to %d", req.has_error); has_error = req.has_error; });
 
   actionlib::SimpleActionServer<franka_msgs::ErrorRecoveryAction> recovery_action_server(
       base_node_handle, "/franka_ros_interface/franka_control/error_recovery",
@@ -144,7 +151,13 @@ int main(int argc, char** argv) {
           control_manager->update(now, period, true);
           franka_control.checkJointLimits();
           franka_control.reset();
-        } else {
+        } 
+        // check if trigger error service has been called and break out of control callback if so
+        else if (has_error) { 
+          ROS_INFO("Has_error triggered! Kill controllers and send recovery action to reset.");
+          return false;
+        } 
+        else {
           control_manager->update(now, period);
           franka_control.checkJointLimits();
           franka_control.enforceLimits(period);
@@ -155,6 +168,7 @@ int main(int argc, char** argv) {
       ROS_ERROR("%s", e.what());
       has_error = true;
     }
+
   }
 
   return 0;

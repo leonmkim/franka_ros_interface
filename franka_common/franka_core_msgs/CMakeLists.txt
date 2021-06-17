@@ -22,12 +22,10 @@ add_message_files( DIRECTORY msg
         CartImpedanceStiffness.msg
 )
 
-# add_service_files( DIRECTORY srv
-#         FILES
-#         SolvePositionIK.srv
-#         SolvePositionFK.srv
-#         IOComponentCommandSrv.srv
-# )
+add_service_files( DIRECTORY srv
+        FILES
+        TriggerError.srv
+)
 
 # add_action_files(DIRECTORY action FILES CalibrationCommand.action)
 
