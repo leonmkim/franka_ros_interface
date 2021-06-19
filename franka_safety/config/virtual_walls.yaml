@@ -1,0 +1,7 @@
+# specify the halfspace of each virtual wall
+# halfspace defined as ax + by + cz > d
+
+virtual_walls:
+  # self-collision prevention wall
+  # about 18cm in x from link 0 gives enough safety buffer
+  wall_1: {a: 1.0,  b: 0.0, c: 0.0, d: 0.18}
