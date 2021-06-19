@@ -81,11 +81,11 @@ def tip_state_callback(msg):
     O_p_TS_y = msg.O_T_EE[13] # y
     O_p_TS_z = msg.O_T_EE[14] # z
 
-    for wall in virtual_walls_list.values():
+    for name, wall in virtual_walls_list.items():
         # virtual
         a, b, c, d = wall['a'], wall['b'], wall['c'], wall['d']
         if ((a * O_p_TS_x + b * O_p_TS_y + c * O_p_TS_z) <= d):
-            
+            print('VIOLATED VIRTUAL WALL: ' + name)
             try:
                 resp = trigger_error(True)
             except rospy.ServiceException as exc:
@@ -131,11 +131,11 @@ def visualize_walls_callback(event):
 
         # create halfspace normal vector in direction of feasibility
         scale = 0.1
-        sum = (a + b + c)
+        twonorm = np.linalg.norm(np.asarray([a, b, c]))
         if d == 0:
-            norm = 0
+            offsetnorm = 0
         else:
-            norm = (a**2 + b**2 + c**2) / d
+            offsetnorm = (a**2 + b**2 + c**2) / d
 
         arrow = Marker()
         arrow.id = id
@@ -149,18 +149,18 @@ def visualize_walls_callback(event):
         arrow.color.r = 1.0
 
         # persistent marker only needs to be published once and will not be deleted
-        arrow.lifetime = rospy.Duration(1) 
+        arrow.lifetime = rospy.Duration(0) 
 
         p_start = Point()
         p_end = Point()
-        p_start.x = a/norm
-        p_start.y = b/norm
-        p_start.z = c/norm
+        p_start.x = a/offsetnorm
+        p_start.y = b/offsetnorm
+        p_start.z = c/offsetnorm
         arrow.points.append(p_start)
         
-        p_end.x = (p_start.x + (scale*(a/sum)))  
-        p_end.y = (p_start.y + (scale*(b/sum)))
-        p_end.z = (p_start.z + (scale*(c/sum)))
+        p_end.x = (p_start.x + (scale*(a/twonorm)))  
+        p_end.y = (p_start.y + (scale*(b/twonorm)))
+        p_end.z = (p_start.z + (scale*(c/twonorm)))
         arrow.points.append(p_end)
 
         msg.markers.append(arrow)
@@ -182,7 +182,7 @@ def visualize_walls_callback(event):
         plane.pose.position.y = p_start.y
         plane.pose.position.z = p_start.z
 
-        normal_vector = np.asarray([(a/sum), (b/sum), (c/sum)])
+        normal_vector = np.asarray([(a/twonorm), (b/twonorm), (c/twonorm)])
         unit_x = np.asarray([1, 0, 0])
         quat_ori = quaternion_from_vectors(unit_x, normal_vector)
 
@@ -192,7 +192,7 @@ def visualize_walls_callback(event):
         plane.pose.orientation.w = quat_ori.w
 
         # persistent marker only needs to be published once and will not be deleted
-        plane.lifetime = rospy.Duration(1) 
+        plane.lifetime = rospy.Duration(0) 
 
         msg.markers.append(plane)
 
@@ -217,7 +217,7 @@ if __name__ == "__main__":
 
     # publish visualization of walls for rviz
     virtual_wall_pub = rospy.Publisher('virtual_wall_viz', MarkerArray, queue_size=1)
-    rospy.Timer(rospy.Duration(1), visualize_walls_callback, oneshot=False)
+    rospy.Timer(rospy.Duration(3), visualize_walls_callback, oneshot=True) 
 
     # setup service client request for trigger_error
     rospy.wait_for_service('/franka_ros_interface/franka_control/trigger_error')
@@ -225,11 +225,7 @@ if __name__ == "__main__":
 
     # start subscribing to tip state
     tip_state_sub = rospy.Subscriber("custom_franka_state_controller/tip_state",
-                                 EndPointState, tip_state_callback, queue_size=1, tcp_nodelay=True)
-
-    # virtual_walls = []
-    # for (wall in virtual_walls_list):
-    #     virtual_walls
+                                 EndPointState, tip_state_callback, queue_size=1, tcp_nodelay=True) 
 
     # pose_pub = rospy.Publisher(
     #     "equilibrium_pose", PoseStamped, queue_size=10)
