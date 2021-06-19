@@ -1,0 +1,13 @@
+<?xml version="1.0" ?>
+<launch>
+    <rosparam command="load" file="$(find franka_safety)/config/virtual_walls.yaml"/>
+
+    <include file="$(find franka_visualization)/launch/franka_visualization.launch">
+        <arg name="robot_ip" value="172.16.0.2" /> $(env FRANKA_ROBOT_IP)
+        <arg name="load_gripper" value="false" /> 
+    </include>
+
+    <node name="virtual_wall" pkg="franka_safety" type="virtual_wall.py" output="screen" required="true" />
+
+
+</launch>

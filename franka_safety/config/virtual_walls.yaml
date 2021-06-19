@@ -4,4 +4,5 @@
 virtual_walls:
   # self-collision prevention wall
   # about 18cm in x from link 0 gives enough safety buffer
-  wall_1: {a: 1.0,  b: 0.0, c: 0.0, d: 0.18}
+  wall_1: {a: 1.0,  b: 0.0, c: 0.0, d: 0.16}
+  # wall_2: {a: 0.0,  b: 0.0, c: 1.0, d: 0.16}

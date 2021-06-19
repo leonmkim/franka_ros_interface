@@ -3,12 +3,13 @@
 import rospy
 import tf.transformations
 import numpy as np
+import quaternion
 
 # from geometry_msgs.msg import PoseStamped
 # from franka_msgs.msg import FrankaState
 from franka_core_msgs.msg import EndPointState
 
-from geometry_msgs import Point
+from geometry_msgs.msg import Point
 from visualization_msgs.msg import MarkerArray, Marker
 
 from franka_core_msgs.srv import TriggerError
@@ -32,6 +33,24 @@ from franka_core_msgs.srv import TriggerError
 #     marker_pose.header.frame_id = link_name
 #     marker_pose.header.stamp = rospy.Time(0)
 #     pose_pub.publish(marker_pose)
+
+
+def quaternion_from_vectors(vec1, vec2):
+    """ Find the quaternion that aligns vec1 to vec2
+    :param vec1: A 3d "source" vector
+    :param vec2: A 3d "destination" vector
+    :return mat: A rotation which when applied to vec1, aligns it with vec2.
+
+    Adapted from https://stackoverflow.com/a/59204638
+    """
+
+    a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
+    axis = np.cross(a, b)
+    angle = np.arccos(np.dot(a, b))
+
+    rot = axis * angle 
+    quat = quaternion.from_rotation_vector(rot).normalized()
+    return quat
 
 
 def tip_state_callback(msg):
@@ -62,7 +81,8 @@ def tip_state_callback(msg):
     O_p_TS_y = msg.O_T_EE[13] # y
     O_p_TS_z = msg.O_T_EE[14] # z
 
-    for wall in virtual_walls_list:
+    for wall in virtual_walls_list.values():
+        # virtual
         a, b, c, d = wall['a'], wall['b'], wall['c'], wall['d']
         if ((a * O_p_TS_x + b * O_p_TS_y + c * O_p_TS_z) <= d):
             
@@ -101,38 +121,84 @@ def tip_state_callback(msg):
 #         marker_pose.pose.orientation = feedback.pose.orientation
 #     server.applyChanges()
 
-def visualize_walls_callback():
+def visualize_walls_callback(event):
     msg = MarkerArray()
+    id = 0
     
-    for wall in virtual_walls_list:
+    for wall in virtual_walls_list.values():
         a, b, c, d = wall['a'], wall['b'], wall['c'], wall['d']
-        sum = a + b + c
 
-        marker = Marker()
-        marker.header.frame_id = "panda_link0"
-        marker.type = marker.ARROW
-        marker.action = marker.ADD
-        marker.scale.x = 0.2
-        marker.scale.y = 0.2
-        marker.scale.z = 0.2
-        marker.color.a = 1.0
+
+        # create halfspace normal vector in direction of feasibility
+        scale = 0.1
+        sum = (a + b + c)
+        if d == 0:
+            norm = 0
+        else:
+            norm = (a**2 + b**2 + c**2) / d
+
+        arrow = Marker()
+        arrow.id = id
+        arrow.header.frame_id = "panda_link0"
+        arrow.type = arrow.ARROW
+        arrow.action = arrow.ADD
+        arrow.scale.x = 0.025
+        arrow.scale.y = 0.05
+        arrow.scale.z = 0.0
+        arrow.color.a = 1.0
+        arrow.color.r = 1.0
 
         # persistent marker only needs to be published once and will not be deleted
-        marker.lifetime = 0 
+        arrow.lifetime = rospy.Duration(1) 
 
-        p_start, p_end = Point()
-        p_start.x = a/d
-        p_start.y = b/d
-        p_start.z = c/d
-        marker.points.appent(p_start)
+        p_start = Point()
+        p_end = Point()
+        p_start.x = a/norm
+        p_start.y = b/norm
+        p_start.z = c/norm
+        arrow.points.append(p_start)
         
-        p_end.x = p_start.x + (a/sum)  
-        p_end.y = p_start.y + (b/sum)
-        p_end.z = p_start.z + (c/sum)
-        marker.points.appent(p_end)
-        
+        p_end.x = (p_start.x + (scale*(a/sum)))  
+        p_end.y = (p_start.y + (scale*(b/sum)))
+        p_end.z = (p_start.z + (scale*(c/sum)))
+        arrow.points.append(p_end)
 
-        msg.markers.append(marker)
+        msg.markers.append(arrow)
+
+        id+=1
+
+        plane = Marker()
+        plane.id = id
+        plane.header.frame_id = "panda_link0"
+        plane.type = plane.CUBE
+        plane.action = plane.ADD
+        plane.scale.x = 0.001
+        plane.scale.y = 1.0
+        plane.scale.z = 1.0
+        plane.color.a = 0.3
+        plane.color.r = 1.0
+
+        plane.pose.position.x = p_start.x 
+        plane.pose.position.y = p_start.y
+        plane.pose.position.z = p_start.z
+
+        normal_vector = np.asarray([(a/sum), (b/sum), (c/sum)])
+        unit_x = np.asarray([1, 0, 0])
+        quat_ori = quaternion_from_vectors(unit_x, normal_vector)
+
+        plane.pose.orientation.x = quat_ori.x
+        plane.pose.orientation.y = quat_ori.y
+        plane.pose.orientation.z = quat_ori.z
+        plane.pose.orientation.w = quat_ori.w
+
+        # persistent marker only needs to be published once and will not be deleted
+        plane.lifetime = rospy.Duration(1) 
+
+        msg.markers.append(plane)
+
+        id+=1
+    
+
 
     virtual_wall_pub.publish(msg)
 
@@ -145,10 +211,13 @@ if __name__ == "__main__":
 
     # get virtual wall constraints from param server
     virtual_walls_list = rospy.get_param('virtual_walls')
+    # print(virtual_walls_list)
+    # for wall in virtual_walls_list.values():
+    #     print(wall)
 
     # publish visualization of walls for rviz
-    virtual_wall_pub = rospy.Publisher('virtual_wall_viz', MarkerArray)
-    rospy.Timer(1, visualize_walls_callback, oneshot=True)
+    virtual_wall_pub = rospy.Publisher('virtual_wall_viz', MarkerArray, queue_size=1)
+    rospy.Timer(rospy.Duration(1), visualize_walls_callback, oneshot=False)
 
     # setup service client request for trigger_error
     rospy.wait_for_service('/franka_ros_interface/franka_control/trigger_error')
