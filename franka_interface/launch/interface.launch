@@ -1,6 +1,7 @@
 <?xml version="1.0" ?>
 <launch>
   <rosparam command="load" file="$(find franka_ros_controllers)/config/ros_controllers.yaml" ns="/franka_ros_interface"/>
+  <arg name="virtual_walls" default="false" />
   <arg name="load_gripper" default="false" />
   <arg name="load_peg" default="true" />
   <arg name="rate" default="1000" />
@@ -70,6 +71,9 @@
 
   <!-- addition for impedance rviz interface  -->
   <!-- <node pkg="rviz" type="rviz" output="screen" name="rviz" args="-d $(find franka_interface)/launch/rviz/franka_description_with_marker.rviz"/> -->
+  <group if="$(eval arg('virtual_walls') == true)">
+    <include file="$(find franka_safety)/launch/virtual_wall.launch"/>
+  </group>   
 
   <group if="$(eval arg('start_moveit') == true)">
     <include file="$(find panda_moveit_config)/launch/move_group.launch">

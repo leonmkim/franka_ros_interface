@@ -4,6 +4,7 @@ import rospy
 import tf.transformations
 import numpy as np
 import quaternion
+import sys
 
 # from geometry_msgs.msg import PoseStamped
 # from franka_msgs.msg import FrankaState
@@ -85,7 +86,7 @@ def tip_state_callback(msg):
         # virtual
         a, b, c, d = wall['a'], wall['b'], wall['c'], wall['d']
         if ((a * O_p_TS_x + b * O_p_TS_y + c * O_p_TS_z) <= d):
-            print('VIOLATED VIRTUAL WALL: ' + name)
+            rospy.logerr('VIOLATED VIRTUAL WALL: ' + name)
             try:
                 resp = trigger_error(True)
             except rospy.ServiceException as exc:
@@ -205,6 +206,12 @@ def visualize_walls_callback(event):
 if __name__ == "__main__":
     rospy.init_node("virtual_wall_node")
 
+    try:
+        in_sim = rospy.get_param("/SIMULATOR_")
+        ns = '/panda_simulator'  
+    except:
+        ns = '/franka_ros_interface'  
+
 
     # listener = tf.TransformListener()
     # link_name = rospy.get_param("~link_name")
@@ -224,7 +231,7 @@ if __name__ == "__main__":
     trigger_error = rospy.ServiceProxy('/franka_ros_interface/franka_control/trigger_error', TriggerError)
 
     # start subscribing to tip state
-    tip_state_sub = rospy.Subscriber("custom_franka_state_controller/tip_state",
+    tip_state_sub = rospy.Subscriber(ns + '/custom_franka_state_controller/tip_state',
                                  EndPointState, tip_state_callback, queue_size=1, tcp_nodelay=True) 
 
     # pose_pub = rospy.Publisher(
