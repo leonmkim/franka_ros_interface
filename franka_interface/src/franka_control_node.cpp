@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
         } 
         // check if trigger error service has been called and break out of control callback if so
         else if (has_error) { 
-          ROS_INFO("Has_error triggered! Kill controllers and send recovery action to reset.");
+          ROS_ERROR("Has_error triggered! Break out of franka control callback!");
           return false;
         } 
         else {

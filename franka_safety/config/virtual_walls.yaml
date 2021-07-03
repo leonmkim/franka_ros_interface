@@ -1,10 +1,12 @@
-# specify the halfspace of each virtual wall
-# halfspace defined as ax + by + cz > d
+# specify the halfspace constraint of each virtual wall
+# halfspace constraint defined as ax + by + cz > d
 # can flip direction of halfspace by negating all terms!
 
 virtual_walls:
   # self-collision prevention wall
   # about 18cm in x from link 0 gives enough safety buffer
-  wall_self_coll: {a: 1.0,  b: 0.0, c: 0.0, d: 0.16}
-  wall_left: {a: 0.0,  b: -1.0, c: 0.0, d: -0.30}
+  # wall_self_coll: {a: 1.0,  b: 0.0, c: 0.0, d: 0.08} # 18 cm in +x of center of link0
+  wall_left: {a: 0.0,  b: -1.0, c: 0.0, d: -0.30} # 30 cm in +y of center of link0
+  wall_right: {a: 0.0,  b: 1.0, c: 0.0, d: -0.30} # 30 cm in -y of center of link0
+  wall_table: {a: 0.0,  b: 0.0, c: 1.0, d: 0.05} # 5 cm in +z of center of link0
   # wall_2: {a: 0.0,  b: 0.0, c: 1.0, d: 0.16}
