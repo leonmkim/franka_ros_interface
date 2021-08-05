@@ -496,6 +496,15 @@ class ArmInterface(object):
         """
         return deepcopy(self._joint_velocity)
 
+    def joint_ordered_velocities(self):
+        """
+        Return all joint velocities.
+
+        :rtype: dict({str:float})
+        :return: unordered dict of joint name Keys to velocity (rad/s) Values
+        """
+        return [self._joint_velocity[name] for name in self._joint_names]
+
     def joint_effort(self, joint):
         """
         Return the requested joint effort.
@@ -515,6 +524,15 @@ class ArmInterface(object):
         :return: unordered dict of joint name Keys to effort (Nm) Values
         """
         return deepcopy(self._joint_effort)
+
+    def joint_ordered_efforts(self):
+        """
+        Return all joint efforts.
+
+        :rtype: dict({str:float})
+        :return: unordered dict of joint name Keys to effort (Nm) Values
+        """
+        return [self._joint_effort[name] for name in self._joint_names]
 
     def endpoint_pose(self):
         """
@@ -614,6 +632,16 @@ class ArmInterface(object):
         :rtype: np.ndarray [7x7]
         """
         return deepcopy(self._joint_inertia)
+    
+    def coriolis(self):
+        """
+        Returns the current coriolis matrix given by libfranka.
+        
+        :return: end-effector coriolis (7,1)
+        :rtype: np.ndarray [7x1]
+        """
+        return deepcopy(self._coriolis)
+
 
     def zero_jacobian(self):
         """
