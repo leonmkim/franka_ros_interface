@@ -472,7 +472,7 @@ class ArmInterface(object):
         Return all joint angles.
 
         :rtype: [float]
-        :return: joint angles (rad) orded by joint_names from proximal to distal (i.e. shoulder to wrist).
+        :return: list of joint angles (rad) orded by joint_names from proximal to distal (i.e. shoulder to wrist).
         """
         return [self._joint_angle[name] for name in self._joint_names]
 
@@ -500,8 +500,8 @@ class ArmInterface(object):
         """
         Return all joint velocities.
 
-        :rtype: dict({str:float})
-        :return: unordered dict of joint name Keys to velocity (rad/s) Values
+        :rtype: [float]
+        :return: list of joint angle velocities (rad/s) orded by joint_names from proximal to distal (i.e. shoulder to wrist).
         """
         return [self._joint_velocity[name] for name in self._joint_names]
 
@@ -529,8 +529,8 @@ class ArmInterface(object):
         """
         Return all joint efforts.
 
-        :rtype: dict({str:float})
-        :return: unordered dict of joint name Keys to effort (Nm) Values
+        :rtype: [float]
+        :return: list of joint efforts (Nm) orded by joint_names from proximal to distal (i.e. shoulder to wrist).
         """
         return [self._joint_effort[name] for name in self._joint_names]
 
